@@ -1,0 +1,185 @@
+"""
+AI Input Pad — 系统级中英混合输入 + 划词翻译工具
+Ctrl+Alt+Space  → 呼出输入框（中英混合 → 英文）
+Ctrl+Alt+Z      → 翻译选中文字（英文 → 中文弹窗）
+"""
+
+import tkinter as tk
+import threading
+import time
+import pyperclip
+import keyboard
+from groq import Groq
+
+# ── 配置区 ──────────────────────────────────────────────────────────────────
+API_KEY       = "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"
+HOTKEY_INPUT  = "ctrl+alt+space"   # 输入框热键
+HOTKEY_TRANS  = "ctrl+alt+z"       # 划词翻译热键
+MODEL         = "llama-3.1-8b-instant"
+# ────────────────────────────────────────────────────────────────────────────
+
+PROMPT_INPUT = (
+    "You are an input assistant. The user types mixed Chinese-English text. "
+    "Convert it into a single, natural, fluent English sentence or question. "
+    "Output ONLY the English sentence — no explanation, no quotes, nothing extra."
+)
+
+PROMPT_TRANS = (
+    "Translate the following text to Chinese. "
+    "Output ONLY the Chinese translation — no explanation, no quotes, nothing extra."
+)
+
+client = Groq(api_key=API_KEY)
+
+
+def call_api(system_prompt: str, text: str) -> str:
+    r = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=400,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ],
+    )
+    return r.choices[0].message.content.strip()
+
+
+class App:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.input_win = None
+        self.trans_win = None
+
+    # ── 输入框 ─────────────────────────────────────────────────────────────
+    def show_input(self):
+        if self.input_win and self.input_win.winfo_exists():
+            self.input_win.lift()
+            self.entry.focus_force()
+            return
+
+        w = self.input_win = tk.Toplevel(self.root)
+        w.title("AI Input")
+        w.attributes("-topmost", True)
+        w.resizable(False, False)
+        w.configure(bg="#1e1e1e")
+
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        w.geometry(f"520x70+{(sw-520)//2}+{sh//3}")
+
+        self.input_status = tk.StringVar(value="输入中英混合  →  Enter 翻译    Esc 关闭")
+        tk.Label(w, textvariable=self.input_status, fg="#888888", bg="#1e1e1e",
+                 font=("Segoe UI", 9)).pack(anchor="w", padx=10, pady=(6, 0))
+
+        self.entry = tk.Entry(w, font=("Segoe UI", 15), bd=0,
+                              bg="#2d2d2d", fg="#ffffff", insertbackground="#ffffff",
+                              relief="flat")
+        self.entry.pack(fill=tk.X, padx=10, pady=(4, 8))
+        self.entry.focus_force()
+        self.entry.bind("<Return>", self._input_submit)
+        self.entry.bind("<Escape>", lambda e: self._close_input())
+
+    def _close_input(self):
+        if self.input_win and self.input_win.winfo_exists():
+            self.input_win.destroy()
+        self.input_win = None
+
+    def _input_submit(self, event=None):
+        text = self.entry.get().strip()
+        if not text:
+            return
+        self.entry.config(state="disabled")
+        self.input_status.set("翻译中...")
+        threading.Thread(target=self._do_input, args=(text,), daemon=True).start()
+
+    def _do_input(self, text):
+        try:
+            result = call_api(PROMPT_INPUT, text)
+            self.root.after(0, lambda: self._input_done(result, None))
+        except Exception as e:
+            self.root.after(0, lambda: self._input_done(None, str(e)))
+
+    def _input_done(self, result, error):
+        if error:
+            self.input_status.set(f"出错: {error[:60]}")
+            self.entry.config(state="normal")
+            return
+        self._close_input()
+        threading.Thread(target=self._paste, args=(result,), daemon=True).start()
+
+    def _paste(self, text):
+        time.sleep(0.2)
+        pyperclip.copy(text)
+        keyboard.send("ctrl+v")
+
+    # ── 划词翻译弹窗 ────────────────────────────────────────────────────────
+    def show_translation(self):
+        # 先释放所有修饰键，再发 Ctrl+C，否则 Ctrl+Alt 还压着会干扰
+        for k in ("ctrl", "alt", "z"):
+            keyboard.release(k)
+        time.sleep(0.1)
+        old = pyperclip.paste()
+        keyboard.send("ctrl+c")
+        time.sleep(0.25)
+        text = pyperclip.paste().strip()
+        if not text or text == old:
+            return
+        threading.Thread(target=self._do_trans, args=(text,), daemon=True).start()
+
+    def _do_trans(self, text):
+        try:
+            result = call_api(PROMPT_TRANS, text)
+            self.root.after(0, lambda: self._show_trans_popup(text, result, None))
+        except Exception as e:
+            self.root.after(0, lambda: self._show_trans_popup(text, None, str(e)))
+
+    def _show_trans_popup(self, original, result, error):
+        if self.trans_win and self.trans_win.winfo_exists():
+            self.trans_win.destroy()
+
+        w = self.trans_win = tk.Toplevel(self.root)
+        w.title("翻译")
+        w.attributes("-topmost", True)
+        w.resizable(False, False)
+        w.configure(bg="#1e1e1e")
+
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        w.geometry(f"480x160+{(sw-480)//2}+{sh//2}")
+
+        # 原文（截断显示）
+        orig_short = original if len(original) <= 60 else original[:60] + "..."
+        tk.Label(w, text=orig_short, fg="#666666", bg="#1e1e1e",
+                 font=("Segoe UI", 9), wraplength=460, justify="left"
+                 ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        # 分割线
+        tk.Frame(w, bg="#333333", height=1).pack(fill=tk.X, padx=12)
+
+        # 翻译结果
+        content = result if result else f"出错: {error}"
+        fg = "#ffffff" if result else "#ff6b6b"
+        tk.Label(w, text=content, fg=fg, bg="#1e1e1e",
+                 font=("Segoe UI", 13), wraplength=456, justify="left"
+                 ).pack(anchor="w", padx=12, pady=(8, 4))
+
+        # 提示
+        tk.Label(w, text="点击任意处关闭", fg="#555555", bg="#1e1e1e",
+                 font=("Segoe UI", 8)).pack(anchor="e", padx=12, pady=(0, 8))
+
+        w.bind("<Button-1>", lambda e: w.destroy())
+        w.bind("<Escape>", lambda e: w.destroy())
+        # 5秒自动关闭
+        w.after(5000, lambda: w.destroy() if w.winfo_exists() else None)
+
+    # ── 主循环 ──────────────────────────────────────────────────────────────
+    def run(self):
+        keyboard.add_hotkey(HOTKEY_INPUT, lambda: self.root.after(0, self.show_input))
+        keyboard.add_hotkey(HOTKEY_TRANS, lambda: self.root.after(0, self.show_translation))
+        print("AI started")
+        print(f"  {HOTKEY_INPUT.upper()} = input")
+        print(f"  {HOTKEY_TRANS.upper()} = translate")
+        self.root.mainloop()
+
+
+if __name__ == "__main__":
+    App().run()
