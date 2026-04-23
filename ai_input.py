@@ -15,7 +15,7 @@ import keyboard
 from openai import OpenAI
 
 # ── 配置 ──────────────────────────────────────────────────────────────────
-API_KEY       = "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"
+API_KEY       = "YOUR_OPENAI_API_KEY"
 HOTKEY_INPUT  = "ctrl+alt+space"
 HOTKEY_TRANS  = "ctrl+alt+a"
 MODEL         = "gpt-4o-mini"

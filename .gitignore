@@ -1,6 +1,23 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.py.bak
+.venv/
+
+# Secrets — never commit these
 .env
+backend/config.py
+
+# Build output
+dist/
+build/
+*.spec
+
+# Tauri / Rust
+ui/src-tauri/target/
+ui/node_modules/
+
+# macOS
+.DS_Store
