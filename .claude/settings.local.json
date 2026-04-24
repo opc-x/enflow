@@ -13,7 +13,31 @@
       "Bash(git push *)",
       "Bash(git rm *)",
       "Bash(gh repo *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8765/explain -H \"Content-Type: application/json\" -d '{\"text\":\"ephemeral\",\"context_sentence\":\"Beauty is ephemeral.\"}')",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8765/vocab/review/judge -H \"Content-Type: application/json\" -d '{\"word\":\"ephemeral\",\"translation\":\"短暂的\",\"user_answer\":\"短暂\"}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -X POST http://127.0.0.1:8765/vocab/review/judge -H \"Content-Type: application/json\" -d '{\"word\":\"ephemeral\",\"translation\":\"短暂的\",\"user_answer\":\"永恒的\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8765/vocab/review -H \"Content-Type: application/json\" -d '{\"word\":\"test_word\",\"correct\":true}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8765/vocab/review -H \"Content-Type: application/json\" -d '{\"word\":\"ephemeral\",\"correct\":true}')",
+      "Bash(kill %1)",
+      "Bash(pnpm --version)",
+      "Bash(cargo --version)",
+      "Bash(rustup --version)",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npm install *)",
+      "Bash(curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs)",
+      "Bash(sh -s -- -y)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm vitest *)",
+      "Bash(curl -s http://localhost:8765/vocab/stats)",
+      "Bash(pnpm exec *)",
+      "Bash(curl -s http://localhost:1420)",
+      "Bash(pnpm dev *)",
+      "Bash(echo \"PID: $!\")"
     ]
   }
 }
