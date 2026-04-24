@@ -1,19 +1,25 @@
 import { useState, useEffect } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { api, ExplainResult } from "../api";
 
-interface Props { word: string; contextSentence: string; translation: string; }
+interface Props {
+  word: string;
+  contextSentence: string;
+  translation: string;
+  initialTab?: "explain" | "pronounce";
+}
 
-export default function ExplainPop({ word, contextSentence, translation }: Props) {
-  const [tab, setTab] = useState<"explain" | "pronounce">("explain");
+export default function ExplainPop({ word, contextSentence, translation, initialTab = "explain" }: Props) {
+  const [tab, setTab] = useState<"explain" | "pronounce">(initialTab);
   const [data, setData] = useState<ExplainResult | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    getCurrentWindow().setSize(new LogicalSize(520, 360)).catch(() => {});
     api.explain(word, contextSentence)
       .then(setData)
       .catch(e => setError(String(e)));
-  }, [word]);
+  }, [word, contextSentence]);
 
   const renderFields = (text: string) =>
     text.split("\n").map((line, i) => {

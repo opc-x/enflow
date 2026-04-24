@@ -3,7 +3,7 @@
  * 覆盖：InputPad / TranslatePop / ReviewSession / StatsView / ExplainPop
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── mock api.ts 让组件测试与网络隔离 ─────────────────────────────────────────
@@ -20,10 +20,12 @@ vi.mock("../api", () => ({
 }));
 
 import { api } from "../api";
-import InputPad     from "../windows/InputPad";
-import ReviewSession from "../windows/ReviewSession";
-import StatsView     from "../windows/StatsView";
-import ExplainPop   from "../windows/ExplainPop";
+import InputPad      from "../windows/InputPad";
+import ReviewSession  from "../windows/ReviewSession";
+import StatsView      from "../windows/StatsView";
+import ExplainPop    from "../windows/ExplainPop";
+import TranslatePop  from "../windows/TranslatePop";
+import { invoke } from "@tauri-apps/api/core";
 
 // ── InputPad ─────────────────────────────────────────────────────────────────
 describe("InputPad", () => {
@@ -233,5 +235,86 @@ describe("ExplainPop", () => {
     render(<ExplainPop word="ephemeral" contextSentence="Beauty is ephemeral." translation="短暂的" />);
     expect(screen.getByText("ephemeral")).toBeInTheDocument();
     expect(screen.getByText("短暂的")).toBeInTheDocument();
+  });
+});
+
+// ── TranslatePop ──────────────────────────────────────────────────────────────
+describe("TranslatePop", () => {
+  const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+  beforeEach(() => vi.clearAllMocks());
+
+  it("读取待翻译文本 → 调 api.translate → 翻译结果显示", async () => {
+    mockInvoke.mockResolvedValue("ephemeral");
+    (api.translate as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translation: "短暂的", text_type: "word",
+    });
+
+    render(<TranslatePop />);
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_pending_translate"));
+    await waitFor(() => expect(api.translate).toHaveBeenCalledWith("ephemeral"));
+    await waitFor(() => expect(screen.getByText("短暂的")).toBeInTheDocument());
+  });
+
+  it("单词类型时显示「解释」「发音」按钮，点击解释加载解释内容", async () => {
+    mockInvoke.mockResolvedValue("ephemeral");
+    (api.translate as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translation: "短暂的", text_type: "word",
+    });
+    (api.explain as ReturnType<typeof vi.fn>).mockResolvedValue({
+      explain: "【核心含义】短暂的",
+      pronounce: "【IPA】/ɪˈfem.ər.əl/",
+      phonetic_xieyin: "",
+    });
+
+    render(<TranslatePop />);
+    await waitFor(() => screen.getByText(/解释/));
+    expect(screen.getByText(/发音/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText(/解释/));
+    await waitFor(() => expect(api.explain).toHaveBeenCalledWith("ephemeral"));
+    await waitFor(() => expect(screen.getByText(/核心含义/)).toBeInTheDocument());
+  });
+
+  it("点击发音按钮直接加载发音内容", async () => {
+    mockInvoke.mockResolvedValue("ephemeral");
+    (api.translate as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translation: "短暂的", text_type: "word",
+    });
+    (api.explain as ReturnType<typeof vi.fn>).mockResolvedValue({
+      explain: "【核心含义】短暂的",
+      pronounce: "【IPA】/ɪˈfem.ər.əl/",
+      phonetic_xieyin: "",
+    });
+
+    render(<TranslatePop />);
+    await waitFor(() => screen.getByText(/发音/));
+
+    await userEvent.click(screen.getByText(/发音/));
+    await waitFor(() => expect(api.explain).toHaveBeenCalledWith("ephemeral"));
+    await waitFor(() => expect(screen.getByText(/IPA/)).toBeInTheDocument());
+  });
+
+  it("翻译失败时显示错误信息，不显示解释按钮", async () => {
+    mockInvoke.mockResolvedValue("ephemeral");
+    (api.translate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network error"));
+
+    render(<TranslatePop />);
+
+    await waitFor(() => expect(screen.getByText(/network error/)).toBeInTheDocument());
+    expect(screen.queryByText(/解释/)).not.toBeInTheDocument();
+  });
+
+  it("句子类型也显示解释和发音按钮", async () => {
+    mockInvoke.mockResolvedValue("This is a long sentence.");
+    (api.translate as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translation: "这是一个很长的句子翻译", text_type: "sentence",
+    });
+
+    render(<TranslatePop />);
+    await waitFor(() => screen.getByText(/这是一个很长的句子翻译/));
+
+    expect(screen.getByText(/解释/)).toBeInTheDocument();
+    expect(screen.getByText(/发音/)).toBeInTheDocument();
   });
 });

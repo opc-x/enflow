@@ -1,20 +1,13 @@
-import { useState } from "react";
 import "./styles/theme.css";
 import InputPad from "./windows/InputPad";
 import TranslatePop from "./windows/TranslatePop";
-import ExplainPop from "./windows/ExplainPop";
 import ReviewSession from "./windows/ReviewSession";
 import StatsView from "./windows/StatsView";
 
 type View = "input" | "translate" | "review" | "stats";
-interface ExplainCtx { word: string; context: string; translation: string; }
 
 export default function App() {
-  const view = (window.location.pathname.replace("/", "") || "input") as View;
-  const [explainCtx, setExplainCtx] = useState<ExplainCtx | null>(null);
-
-  const openExplain = (word: string, context: string, translation: string) =>
-    setExplainCtx({ word, context, translation });
+  const view = (window.location.pathname.replace(/^\/+|\/+$/g, "") || "input") as View;
 
   if (view === "input") return (
     <InputPad
@@ -24,10 +17,7 @@ export default function App() {
   );
 
   if (view === "translate") {
-    if (explainCtx) return (
-      <ExplainPop word={explainCtx.word} contextSentence={explainCtx.context} translation={explainCtx.translation} />
-    );
-    return <TranslatePop onExplain={openExplain} />;
+    return <TranslatePop />;
   }
 
   if (view === "review") return <ReviewSession />;

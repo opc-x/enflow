@@ -7,7 +7,7 @@ export default function InputPad({ onStats, onReview }: {
   onStats: () => void; onReview: () => void;
 }) {
   const [text, setText] = useState("");
-  const [status, setStatus] = useState("输入中英混合  →  Enter 转换    Esc 关闭");
+  const [status, setStatus] = useState("Enter 转换  Esc 关闭  ✦T 划词翻译");
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -18,9 +18,8 @@ export default function InputPad({ onStats, onReview }: {
     try {
       const { result } = await api.convert(text);
       await invoke("paste_text", { text: result });
-      await getCurrentWindow().hide();
       setText("");
-      setStatus("输入中英混合  →  Enter 转换    Esc 关闭");
+      setStatus("Enter 转换  Esc 关闭  ✦T 划词翻译");
     } catch (e) {
       setStatus(`出错: ${e}`);
     } finally {

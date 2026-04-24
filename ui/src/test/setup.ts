@@ -7,10 +7,19 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
+  LogicalSize: class LogicalSize {
+    width: number;
+    height: number;
+    constructor(width: number, height: number) {
+      this.width = width;
+      this.height = height;
+    }
+  },
   getCurrentWindow: () => ({
     hide:     vi.fn().mockResolvedValue(undefined),
     show:     vi.fn().mockResolvedValue(undefined),
     setFocus: vi.fn().mockResolvedValue(undefined),
+    setSize:  vi.fn().mockResolvedValue(undefined),
   }),
 }));
 

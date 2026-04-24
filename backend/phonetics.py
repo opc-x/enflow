@@ -9,6 +9,12 @@ import pronouncing
 VOWELS = {"AA", "AE", "AH", "AO", "AW", "AY", "EH", "ER", "EY",
           "IH", "IY", "OW", "OY", "UH", "UW"}
 
+SPECIAL_XIEYIN = {
+    "you're": "优(you)-儿(er)",
+    "youre": "优(you)-儿(er)",
+    "your": "优(you)-儿(er)",
+}
+
 # (首辅音, 元音) → (汉字, 拼音)
 # 首辅音 None = 无辅音起头
 SYLLABLE_MAP: dict[tuple, tuple[str, str]] = {
@@ -294,6 +300,7 @@ SYLLABLE_MAP: dict[tuple, tuple[str, str]] = {
     ("Y",  "AY"): ("耶", "ye"),
     ("Y",  "OW"): ("哟", "yo"),
     ("Y",  "UW"): ("优", "you"),
+    ("Y",  "UH"): ("优", "you"),
     ("Y",  "ER"): ("耶", "ye"),
     # ── Z ─────────────────────────────────
     ("Z",  "IH"): ("兹", "zi"),
@@ -410,7 +417,12 @@ def get_xieyin(word: str) -> str:
     返回 CMU 谐音，如 "伊(yi)-费(fei)-默(mo)-勒(le)"
     找不到时返回空字符串
     """
-    phones = pronouncing.phones_for_word(word.lower())
+    normalized = word.strip().lower().replace("’", "'")
+    normalized = re.sub(r"^[^a-z']+|[^a-z']+$", "", normalized)
+    if normalized in SPECIAL_XIEYIN:
+        return SPECIAL_XIEYIN[normalized]
+
+    phones = pronouncing.phones_for_word(normalized)
     if not phones:
         return ""
     syllables = _phones_to_syllables(phones[0].split())

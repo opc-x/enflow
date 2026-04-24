@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from datetime import datetime
+import traceback
 import ai
 import vocab as vocab_module
 
@@ -11,6 +13,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+DEBUG_LOG = "/tmp/ai-input-backend.log"
+
+
+def debug_log(message: str) -> None:
+    ts = datetime.now().isoformat(timespec="milliseconds")
+    try:
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{ts} {message}\n")
+    except Exception:
+        pass
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    started = datetime.now()
+    try:
+        response = await call_next(request)
+        elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+        debug_log(f"{request.method} {request.url.path} -> {response.status_code} {elapsed_ms}ms")
+        return response
+    except Exception as e:
+        elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+        debug_log(f"{request.method} {request.url.path} !! {type(e).__name__}: {e} {elapsed_ms}ms")
+        debug_log(traceback.format_exc().rstrip())
+        raise
 
 
 # ── Request models ─────────────────────────────────────────────────────────────

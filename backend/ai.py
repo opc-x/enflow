@@ -17,6 +17,45 @@ _TRANSLATE_PROMPTS = {
     "paragraph": prompts.PROMPT_TRANSLATE_PARAGRAPH,
 }
 
+_CONTRACTIONS = {
+    "you're": {
+        "expanded": "you are",
+        "translation": "你是 / 你正在",
+        "ipa": "/jʊr/（快读也常弱化成 /jər/）",
+        "xieyin": "优(you)-儿(er)",
+        "grammar": "这是 you are 的缩写，后面通常接形容词、名词或现在分词。",
+        "example": "You're right. → 你是对的。",
+        "note": "先发“优”，结尾用轻短的儿化音收住，不要读成“屋”。",
+    },
+    "i'm": {
+        "expanded": "I am",
+        "translation": "我是 / 我正在",
+        "ipa": "/aɪm/",
+        "xieyin": "爱(ai)-姆(mu)",
+        "grammar": "这是 I am 的缩写，口语中比 I am 更自然。",
+        "example": "I'm ready. → 我准备好了。",
+        "note": "结尾 /m/ 双唇闭合收音，不要加很重的“木”。",
+    },
+    "can't": {
+        "expanded": "cannot",
+        "translation": "不能",
+        "ipa": "/kænt/",
+        "xieyin": "看(kan)-特(te)",
+        "grammar": "这是 cannot 的缩写，表示不能或不可能。",
+        "example": "I can't go. → 我不能去。",
+        "note": "词尾 /t/ 很轻，重点和 can 区分开。",
+    },
+    "don't": {
+        "expanded": "do not",
+        "translation": "不 / 不要",
+        "ipa": "/doʊnt/",
+        "xieyin": "东(dong)-特(te)",
+        "grammar": "这是 do not 的缩写，用于一般现在时否定或祈使句否定。",
+        "example": "Don't worry. → 别担心。",
+        "note": "中间是双元音 /oʊ/，词尾 /t/ 轻收。",
+    },
+}
+
 
 async def _call(system: str, user: str, max_tokens: int = 800) -> str:
     r = await client.chat.completions.create(
@@ -42,6 +81,12 @@ def _detect_type(text: str) -> str:
     return "sentence"
 
 
+def _lookup_contraction(text: str) -> dict | None:
+    key = text.strip().lower().replace("’", "'")
+    key = re.sub(r"^[^a-z']+|[^a-z']+$", "", key)
+    return _CONTRACTIONS.get(key)
+
+
 def _replace_xieyin_line(ai_output: str, cmu_xieyin: str) -> str:
     """把 AI 输出的【谐音】行替换为 CMU 谐音"""
     if not cmu_xieyin:
@@ -55,6 +100,11 @@ async def convert(text: str) -> str:
 
 async def translate(text: str, context_sentence: str = "") -> dict:
     text_type = _detect_type(text)
+    if text_type == "word":
+        contraction = _lookup_contraction(text)
+        if contraction:
+            return {"translation": contraction["translation"], "text_type": "word"}
+
     user_msg = text
     if context_sentence:
         user_msg = f"{text}\n[context: {context_sentence}]"
@@ -63,6 +113,29 @@ async def translate(text: str, context_sentence: str = "") -> dict:
 
 
 async def explain_pronounce(text: str, context_sentence: str = "") -> dict:
+    contraction = _lookup_contraction(text)
+    if contraction:
+        explain = (
+            "【词性】缩约形式\n"
+            f"【IPA】{contraction['ipa']}\n"
+            f"【谐音】{contraction['xieyin']}\n"
+            f"【核心含义】{contraction['expanded']}，{contraction['translation']}\n"
+            f"【语法要点】{contraction['grammar']}\n"
+            f"【例句】{contraction['example']}"
+        )
+        pronounce = (
+            f"【IPA】{contraction['ipa']}\n"
+            f"【谐音】{contraction['xieyin']}\n"
+            "【重音】单音节词，正常语流中通常不重读\n"
+            f"⚡【发音陷阱】{contraction['note']}\n"
+            f"【记忆口诀】看到缩写先还原成 {contraction['expanded']}，再按口语快读处理。"
+        )
+        return {
+            "explain": explain,
+            "pronounce": pronounce,
+            "phonetic_xieyin": contraction["xieyin"],
+        }
+
     user_msg = text
     if context_sentence:
         user_msg = f"{text} [context: {context_sentence}]"
