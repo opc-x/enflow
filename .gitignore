@@ -21,3 +21,6 @@ ui/node_modules/
 
 # macOS
 .DS_Store
+
+# 测评结果只保留本地
+infra-model-eval/results/

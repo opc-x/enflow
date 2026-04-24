@@ -13,14 +13,18 @@ import datetime
 import pyperclip
 import keyboard
 from openai import OpenAI
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # ── 配置 ──────────────────────────────────────────────────────────────────
-API_KEY       = "YOUR_OPENAI_API_KEY"
+API_KEY       = os.environ["DEEPSEEK_API_KEY"]
 HOTKEY_INPUT  = "ctrl+alt+space"
 HOTKEY_TRANS  = "ctrl+alt+a"
-MODEL         = "gpt-4o-mini"
-VOCAB_PATH    = r"C:\Users\DEVTrump\zx-projects\agentic\vocab.json"
-AUTO_CLOSE_MS = 12000
+MODEL         = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4")
+VOCAB_PATH    = Path(os.environ.get("VOCAB_PATH", "~/ai-input/vocab.json")).expanduser()
+AUTO_CLOSE_MS = int(os.environ.get("AUTO_CLOSE_MS", "12000"))
 # ──────────────────────────────────────────────────────────────────────────
 
 PROMPT_INPUT = (
@@ -90,7 +94,7 @@ Answer ONLY "yes" or "no".
 - "no" if extremely basic (A1/A2: the, is, I, you, hello, etc.)
 - "no" if it\'s a proper noun"""
 
-client = OpenAI(api_key=API_KEY)
+client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 
 
 def call_api(system_prompt: str, text: str, max_tokens: int = 800) -> str:
