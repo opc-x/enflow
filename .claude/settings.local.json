@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(chmod +x *)"
+      "Bash(chmod +x *)",
+      "Bash(echo '')",
+      "Bash(echo '# DeepSeek API')",
+      "Bash(echo 'export DEEPSEEK_API_KEY=\"sk-2b145b4748b443509ac94c775e689d81\"')",
+      "Bash(pip install *)",
+      "Bash(python test_model.py)",
+      "Bash(python3 -m pip install python-dotenv openai -q)",
+      "Bash(python3 test_model.py)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git rm *)",
+      "Bash(gh repo *)",
+      "Bash(git remote *)"
     ]
   }
 }
