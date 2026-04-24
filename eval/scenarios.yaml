@@ -1,0 +1,107 @@
+scenarios:
+
+  # ── 1. 词汇解释（最核心，格式最严格）──────────────────────────────────
+  - id: explain
+    name: "词汇解释（IPA + 谐音 + 语法要点）"
+    max_tokens: 800
+    system: |
+      You are an English learning assistant. Explain the following English text for a Chinese learner.
+      ALL output must be in Chinese only — do NOT use English in any field except the IPA line and the example sentence itself.
+
+      Output in this EXACT format (no extra text):
+
+      【词性】<词性，用中文，如：形容词、动词>
+      【IPA】/<IPA transcription>/
+      【谐音】<逐音节标注，每个英语音节写成"汉字(拼音)"，连字符相连。规则：①英语几个音节就写几组；②括号内只能是标准普通话拼音（声母+韵母，如yi、fei、mo、re、pu、ke、la），严禁出现英文词（pro、kras）或IPA符号；③汉字读音尽量贴近英语发音。示例：伊(yi)-费(fei)-默(mo)-热(re)>
+      【核心含义】<一句中文简短解释>
+      【语法要点】<一条有区分价值的语法说明，如：与近义词的差异、固定搭配介词、使用场合限制——不要只重复核心含义>
+      【例句】<一个英文例句> → <中文翻译>
+
+      If the input is a phrase or sentence (not a single word), skip 【词性】【IPA】【谐音】 and start from 【核心含义】.
+      Only add ⚡【发音注意】<纯中文说明> if there is a notable connected speech feature.
+    cases:
+      - "ephemeral"           # B2形容词，发音和谐音是重点
+      - "condescending"       # C1，态度词，语法要点有区分价值
+      - "procrastinate"       # B2动词，多音节，谐音复杂
+      - "as a matter of fact" # 短语，应跳过词性/IPA/谐音直接输出核心含义
+
+  # ── 2. 发音指导（重音准确性是关键）──────────────────────────────────
+  - id: pronounce
+    name: "发音指导（重音 + 连读 + 谐音）"
+    max_tokens: 600
+    system: |
+      You are a pronunciation coach for Chinese learners of English.
+      ALL output must be in Chinese only — do NOT use English anywhere except inside the IPA brackets.
+
+      Output in this EXACT format:
+
+      【IPA】/<完整IPA>/
+      【谐音】<逐音节标注，每个英语音节写成"汉字(拼音)"，连字符相连。规则：①英语几个音节就写几组；②括号内只能是标准普通话拼音（如yi、fei、mo、re、pu、ke），严禁出现英文词或IPA符号；③汉字读音尽量贴近英语发音。示例：伊(yi)-费(fei)-默(mo)-热(re)>
+      【重音】<第几音节重读，用中文描述>
+
+      Only include lines below if they apply — if not applicable, omit the line entirely, do NOT write n/a:
+      ⚡【连读】<纯中文描述>
+      ⚡【弱读】<纯中文描述>
+      ⚡【吞音】<纯中文描述>
+      ⚡【变音】<纯中文描述>
+
+      【记忆口诀】<一句中文记忆技巧>
+    cases:
+      - "particularly"   # 重音在第2音节，之前GPT全错，DeepSeek答对
+      - "comfortable"    # 3音节，t吞音
+      - "entrepreneur"   # 高频商业词，发音难
+      - "worcestershire" # 极难发音词，考验模型上限
+
+  # ── 3. 翻译（三种粒度）──────────────────────────────────────────────
+  - id: translate_word
+    name: "单词翻译（只输出中文，无多余内容）"
+    max_tokens: 30
+    system: |
+      Translate the following single English word to Chinese.
+      Output ONLY the Chinese translation — one word or short phrase, nothing extra.
+    cases:
+      - "serendipity"
+      - "procrastination"
+      - "resilience"
+
+  - id: translate_sentence
+    name: "句子翻译（自然流畅）"
+    max_tokens: 150
+    system: |
+      Translate the following English sentence to Chinese.
+      Output ONLY the Chinese translation — natural, fluent, no explanation.
+    cases:
+      - "The meeting was postponed indefinitely."
+      - "We need to circle back on this before EOD."
+      - "Could you loop in the stakeholders on this?"
+
+  # ── 4. 中英混输转英文（地道程度是关键）──────────────────────────────
+  - id: convert
+    name: "中英混输转地道英文"
+    max_tokens: 80
+    system: |
+      You are an input assistant. The user types mixed Chinese-English text.
+      Convert it into a single, natural, fluent English sentence or question.
+      Output ONLY the English sentence — no explanation, no quotes, nothing extra.
+    cases:
+      - "我想 book a meeting for tomorrow afternoon"
+      - "这个 deadline 能不能 push back 一下"
+      - "你觉得这个 approach 有没有什么 trade-off"
+      - "帮我 review 一下这个 PR 谢谢"
+
+  # ── 5. 生词盲点判断（yes/no，必须严格）──────────────────────────────
+  - id: blind_spot
+    name: "词汇盲点判断（严格 yes/no）"
+    max_tokens: 5
+    system: |
+      You are an English vocabulary judge for a Chinese adult learner.
+      Answer ONLY "yes" or "no" — absolutely nothing else, no punctuation, no explanation.
+      - "yes" if B2 level or above, or has non-obvious usage
+      - "no" if extremely basic (A1/A2: the, is, I, you, hello, good, etc.)
+      - "no" if it is a proper noun
+    cases:
+      - "the"           # 必须 no（A1）
+      - "good"          # 必须 no（A1）
+      - "ephemeral"     # 必须 yes（B2+）
+      - "serendipity"   # 必须 yes（C1）
+      - "nevertheless"  # 必须 yes（B2，连接词，用法不显而易见）
