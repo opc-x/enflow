@@ -23,7 +23,7 @@
 ```bash
 mkdir backend && cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install fastapi uvicorn openai python-dotenv
+pip install fastapi uvicorn openai python-dotenv pronouncing
 pip freeze > requirements.txt
 ```
 
@@ -50,7 +50,9 @@ AUTO_CLOSE_MS    = int(os.environ.get("AUTO_CLOSE_MS", "12000"))
 
 - `PROMPT_CONVERT`：中英混输转英文
 - `PROMPT_TRANSLATE_WORD/PHRASE/SENTENCE/PARAGRAPH`：翻译四种粒度
-- `PROMPT_EXPLAIN_PRONOUNCE`：解释+发音合并（单次调用）
+- `PROMPT_EXPLAIN`：词汇解释（词性/IPA/谐音/含义/语法/例句）
+- `PROMPT_PRONOUNCE`：发音指导（IPA/重音/连读/发音陷阱/口诀）
+- `PROMPT_REVIEW_JUDGE`：复习语义判题（correct/wrong + feedback）
 
 ### 1.4 phonetics.py
 
@@ -85,15 +87,27 @@ client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
 def call(system: str, user: str, max_tokens: int = 800) -> str: ...
 def convert(text: str) -> str: ...
-def translate(text: str) -> dict: ...          # 含 text_type
-def explain_pronounce(text: str) -> dict: ...  # 含 explain, pronounce, phonetic_xieyin
+def translate(text: str, context_sentence: str = "") -> dict: ...   # 含 text_type
+def explain_pronounce(text: str, context_sentence: str = "") -> dict: ...  # 含 explain, pronounce, phonetic_xieyin
+def judge(word: str, translation: str, user_answer: str) -> dict: ...      # 含 correct, feedback
 ```
 
 `explain_pronounce` 流程：
-1. 调 AI，用 `PROMPT_EXPLAIN_PRONOUNCE`
-2. 调 `phonetics.get_xieyin(text)`
-3. 用 CMU 谐音替换 AI 输出的【谐音】行
-4. 返回合并结果
+1. 并发调两次 AI：`PROMPT_EXPLAIN`（解释）+ `PROMPT_PRONOUNCE`（发音）
+2. 调 `phonetics.get_xieyin(text)` 获取 CMU 谐音
+3. 用 CMU 谐音替换两个 AI 输出中的【谐音】行
+4. 返回 `{explain, pronounce, phonetic_xieyin}`
+
+`judge` 流程：
+1. 调 AI，用 `PROMPT_REVIEW_JUDGE`
+2. 解析 `verdict: correct/wrong` 和可选的 `feedback`
+3. 返回 `{correct: bool, feedback: str}`
+
+**复习两步调用顺序（前端必须按序）：**
+```
+步骤1: POST /vocab/review/judge  → 得到 {correct, feedback} → 展示给用户
+步骤2: POST /vocab/review        → 用 correct 更新 SM-2 时间表
+```
 
 ### 1.7 main.py
 
@@ -107,6 +121,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
 @app.post("/convert")
 @app.post("/translate")
 @app.post("/explain")
+@app.post("/vocab/review/judge")
 @app.get("/vocab/stats")
 @app.get("/vocab/due")
 @app.post("/vocab/review")
@@ -115,24 +130,56 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
 ### Phase 1 验收 ✅
 
 ```bash
-python main.py  # 启动
+python main.py  # 启动，应看到 "Uvicorn running on http://127.0.0.1:8765"
 
-# 逐一测试，全部通过才算完成：
-curl -X POST http://127.0.0.1:8765/convert \
+# ── 1. 中英转换 ──
+curl -s -X POST http://127.0.0.1:8765/convert \
   -H "Content-Type: application/json" \
-  -d '{"text":"我想 book a meeting"}'
-# 期望：{"result":"I want to book a meeting."}
+  -d '{"text":"我想 book a meeting for tomorrow"}'
+# 期望：{"result":"I want to book a meeting for tomorrow."}
 
-curl -X POST http://127.0.0.1:8765/translate \
-  -d '{"text":"ephemeral"}'
+# ── 2. 翻译（不带上下文）──
+curl -s -X POST http://127.0.0.1:8765/translate \
+  -H "Content-Type: application/json" \
+  -d '{"text":"ephemeral","context_sentence":""}'
 # 期望：{"translation":"短暂的","text_type":"word"}
 
-curl -X POST http://127.0.0.1:8765/explain \
-  -d '{"text":"ephemeral"}'
-# 期望：explain/pronounce 字段存在，phonetic_xieyin 是"汉字(拼音)"格式，无非拼音内容
+# ── 3. 翻译（带上下文）──
+curl -s -X POST http://127.0.0.1:8765/translate \
+  -H "Content-Type: application/json" \
+  -d '{"text":"ephemeral","context_sentence":"The beauty of cherry blossoms is ephemeral."}'
+# 期望：{"translation":"短暂的","text_type":"word"}
 
-curl http://127.0.0.1:8765/vocab/stats
-# 期望：返回 JSON 含 total/due_today/streak 等字段
+# ── 4. 解释+发音 ──
+curl -s -X POST http://127.0.0.1:8765/explain \
+  -H "Content-Type: application/json" \
+  -d '{"text":"ephemeral","context_sentence":"Beauty is ephemeral."}'
+# 期望：explain/pronounce 字段存在，phonetic_xieyin 是"汉字(拼音)"格式（如 伊(yi)-费(fei)）
+
+# ── 5. 复习判题 ──
+curl -s -X POST http://127.0.0.1:8765/vocab/review/judge \
+  -H "Content-Type: application/json" \
+  -d '{"word":"ephemeral","translation":"短暂的","user_answer":"短暂"}'
+# 期望：{"correct":true,"feedback":"..."}
+
+curl -s -X POST http://127.0.0.1:8765/vocab/review/judge \
+  -H "Content-Type: application/json" \
+  -d '{"word":"ephemeral","translation":"短暂的","user_answer":"永恒的"}'
+# 期望：{"correct":false,"feedback":"..."}
+
+# ── 6. 生词统计 ──
+curl -s http://127.0.0.1:8765/vocab/stats
+# 期望：{"total":N,"not_mastered":N,"learning":N,"mastered":N,"due_today":N,"streak":N,"today_new":N}
+
+# ── 7. 待复习词列表 ──
+curl -s http://127.0.0.1:8765/vocab/due
+# 期望：[] 或 [{"word":"...","translation":"..."},...] 
+
+# ── 8. 更新复习记录 ──
+curl -s -X POST http://127.0.0.1:8765/vocab/review \
+  -H "Content-Type: application/json" \
+  -d '{"word":"ephemeral","correct":true}'
+# 期望：{"next_review_time":"2026-..."}
 ```
 
 ---
@@ -286,6 +333,48 @@ pnpm tauri build  # 输出 .msi
 
 - [ ] Mac：点击 .app 启动，快捷键正常，功能完整
 - [ ] Windows：安装后重启，开机自动运行，功能完整
+
+---
+
+## Phase 6：TTS 音频（v2，Phase 5 完成后启动）
+
+> 认知神经科学核心缺口：视觉+听觉双通道编码，记忆强度质的提升。
+
+### 6.1 Backend：TTS 接口
+
+```python
+# backend/tts.py
+import httpx
+from config import AZURE_TTS_KEY, AZURE_TTS_REGION
+
+async def synthesize(text: str, speed: float = 1.0) -> bytes:
+    """调 Azure Neural TTS，返回 MP3 bytes"""
+    ...
+```
+
+```
+POST /tts
+  body:    { "text": "ephemeral", "speed": 1.0 }
+  returns: { "audio_base64": "..." }  # MP3，前端 <audio> 直接播放
+```
+
+Azure Neural TTS 配置：
+- 语音：`en-US-JennyNeural`（自然，适合学习）
+- 速度：默认 1.0，复习时可调 0.8 放慢
+- 费用：约 $0.016/1000字符，极低
+
+### 6.2 Frontend：发音播放按钮
+
+- IPA 旁边加 ▶ 播放按钮
+- 例句行尾加 ▶ 播放按钮（播整句，含真实连读）
+- 复习界面加 ▶（听完再回答，强化语音记忆）
+
+### Phase 6 验收 ✅
+
+- [ ] 点击 IPA 旁 ▶，能听到单词自然发音
+- [ ] 点击例句旁 ▶，能听到整句（含连读/弱读）
+- [ ] 复习界面 ▶ 正常播放
+- [ ] 网络异常时降级：按钮变灰，不崩溃
 
 ---
 

@@ -44,6 +44,7 @@ scenarios:
       ⚡【弱读】<纯中文描述>
       ⚡【吞音】<纯中文描述>
       ⚡【变音】<纯中文描述>
+      ⚡【发音陷阱】<仅当以下情况出现时输出，其余省略：①含/θ/或/ð/（th音）时说明唇齿舌位；②含词末辅音群（如-cts,-nds）时提示收音方式；③含关键长短元音对比（如/ɪ/vs/iː/）时对比说明——用纯中文>
 
       【记忆口诀】<一句中文记忆技巧>
     cases:
@@ -89,9 +90,9 @@ scenarios:
       - "你觉得这个 approach 有没有什么 trade-off"
       - "帮我 review 一下这个 PR 谢谢"
 
-  # ── 5. 生词盲点判断（yes/no，必须严格）──────────────────────────────
+  # ── 5. 生词盲点判断 ── 仅供对照参考，实际实现用 CEFR 静态词表（vocab.py），不调 AI ──
   - id: blind_spot
-    name: "词汇盲点判断（严格 yes/no）"
+    name: "词汇盲点判断（严格 yes/no）【仅评测对照用，不进生产】"
     max_tokens: 5
     system: |
       You are an English vocabulary judge for a Chinese adult learner.
@@ -105,3 +106,25 @@ scenarios:
       - "ephemeral"     # 必须 yes（B2+）
       - "serendipity"   # 必须 yes（C1）
       - "nevertheless"  # 必须 yes（B2，连接词，用法不显而易见）
+
+  # ── 6. 复习判题（AI 语义判断，生产使用）────────────────────────────────
+  - id: review_judge
+    name: "复习判题（语义正确性判断）"
+    max_tokens: 50
+    system: |
+      You are a vocabulary review judge for a Chinese learner of English.
+      You will receive: word, standard translation, and the learner's answer.
+      Judge if the learner's answer is semantically correct — meaning matters, exact wording does not.
+
+      Output in this EXACT format, nothing else:
+      verdict: correct
+      or
+      verdict: wrong
+      feedback: <一句中文说明原因，仅当wrong时输出>
+    cases:
+      - "word=ephemeral | standard=短暂的 | answer=短暂"        # 应判 correct
+      - "word=ephemeral | standard=短暂的 | answer=一瞬即逝"    # 应判 correct
+      - "word=ephemeral | standard=短暂的 | answer=永恒的"      # 应判 wrong
+      - "word=ephemeral | standard=短暂的 | answer=暂时性的"    # 应判 correct
+      - "word=resilience | standard=韧性 | answer=不知道"       # 应判 wrong
+      - "word=resilience | standard=韧性 | answer=坚韧"        # 应判 correct
