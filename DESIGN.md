@@ -1,6 +1,22 @@
 # DESIGN — 做什么
 
-> 回答 What。架构、模块边界、接口契约、数据模型。AI agent 按此实现，不自由发挥。
+> 回答 What。业务功能、架构、模块边界、接口契约、数据模型。AI agent 按此实现，不自由发挥。
+> 更新时机：加功能、改模块边界、API 变化、数据结构变化。
+
+---
+
+## 产品功能清单
+
+| # | 功能 | 触发方式 | 说明 |
+|---|------|---------|------|
+| 1 | **输入框** | Cmd+Option+I / Ctrl+Alt+I | 弹窗输入中英混合 → AI 转地道英文 → 自动粘贴到光标 |
+| 2 | **划词翻译** | Cmd+Option+T / Ctrl+Alt+T | 选中英文 → 弹窗显示中文翻译，12秒自动关 |
+| 3 | **解释** | 翻译弹窗点按钮 | 词性/IPA/谐音/核心含义/语法要点/例句，结合上下文句子 |
+| 4 | **发音** | 解释弹窗 tab 切换 | IPA/谐音(CMU)/重音/连读/吞音/记忆口诀 |
+| 5 | **生词自动入库** | 翻译后自动触发 | A1/A2 词排除，其余入 vocab.json |
+| 6 | **间隔复习** | 托盘菜单 / 输入框按钮 | SM-2调度，AI语义判断对错 |
+| 7 | **学习进展** | 托盘菜单 / 输入框按钮 | 词数/掌握度/连续天数/今日新词 |
+| 8 | **系统托盘** | 后台常驻 | 右键菜单：进展/复习/退出 |
 
 ---
 
@@ -30,7 +46,7 @@ FastAPI Server（子进程，localhost:8765）
 | `prompts.py` | 所有 prompt 常量 | 唯一 prompt 来源，禁止在其他文件写 prompt |
 | `ai.py` | DeepSeek API 调用封装 | 调用 prompts.py，不内联 prompt |
 | `phonetics.py` | 谐音生成（CMU数据库，非AI） | 英语音素 → 汉语拼音规则映射 |
-| `vocab.py` | 生词本 CRUD + SM-2 + CEFR判断 | vocab.json 本地文件 |
+| `vocab.py` | 生词本 CRUD + SM-2 + 入库判断 | vocab.json 本地文件 |
 | `config.py` | 从 .env 读配置 | 无硬编码 key |
 
 ### Frontend（Tauri + React）
@@ -57,16 +73,23 @@ POST /convert
   returns: { "result": "I want to book a meeting." }
 
 POST /translate
-  body:    { "text": "ephemeral" }
+  body:    { "text": "ephemeral", "context_sentence": "Beauty is ephemeral." }
   returns: { "translation": "短暂的", "text_type": "word" }
+  注意：context_sentence 可选，有则传入 prompt 提升解释准确性
 
 POST /explain
-  body:    { "text": "ephemeral" }
+  body:    { "text": "ephemeral", "context_sentence": "Beauty is ephemeral." }
   returns: {
     "explain": "【词性】...\n【IPA】...\n...",
     "pronounce": "【IPA】...\n【谐音】...\n...",
-    "phonetic_xieyin": "伊(yi)-费(fei)-默(mo)-热(re)"  ← CMU 生成，替换 AI 谐音
+    "phonetic_xieyin": "伊(yi)-费(fei)-默(mo)-热(re)"
   }
+  注意：phonetic_xieyin 由 phonetics.py（CMU）生成，前端替换 AI 的【谐音】行
+
+POST /vocab/review/judge
+  body:    { "word": "ephemeral", "translation": "短暂的", "user_answer": "短暂" }
+  returns: { "correct": true, "feedback": "意思正确，标准答案：短暂的" }
+  注意：AI 语义判断，非字符串比对。"短暂"和"短暂的"都算对
 
 GET  /vocab/stats
   returns: { "total", "not_mastered", "learning", "mastered", "due_today", "streak", "today_new" }
@@ -79,33 +102,34 @@ POST /vocab/review
   returns: { "next_review_time": "2026-05-01T..." }
 ```
 
-**注意**：`/explain` 返回的 `phonetic_xieyin` 由 `phonetics.py`（CMU数据库）生成，覆盖 AI 在 explain prompt 中生成的谐音字段。前端展示时用此字段替换 【谐音】行。
-
 ---
 
 ## AI 调用设计
 
-### 调用清单（共 3 种，不是 5 种）
+### 调用清单（共 4 种）
 
-| 功能 | endpoint | prompt | 模型 | 备注 |
-|------|----------|--------|------|------|
-| 输入转英文 | /convert | PROMPT_CONVERT | deepseek-chat | 用户主动触发 |
-| 划词翻译 | /translate | PROMPT_TRANSLATE_* | deepseek-chat | 自动触发 |
-| 解释+发音 | /explain | PROMPT_EXPLAIN_PRONOUNCE | deepseek-chat | 合并为一次调用 |
-
-**已移除**：
-- ~~blind_spot AI判断~~ → 改用 CEFR 词频表（`vocab.py` 静态判断）
-- ~~explain 和 pronounce 分两次~~ → 合并为一次，前端 tab 切换
-
-### prompt 位置
+| 功能 | endpoint | 模型 | 备注 |
+|------|----------|------|------|
+| 输入转英文 | /convert | deepseek-chat | 用户主动触发 |
+| 划词翻译 | /translate | deepseek-chat | 传 context_sentence 提升质量 |
+| 解释+发音 | /explain | deepseek-chat | 合并一次调用，传 context_sentence |
+| 复习判题 | /vocab/review/judge | deepseek-chat | **语义匹配**，非字符串比对 |
 
 所有 prompt 在 `backend/prompts.py`，经 `eval/scenarios.yaml` 验证通过。
+
+### Prompt 位置
+
+```
+CLAUDE/CONTEXT/DESIGN/PLAN  → 给 Claude Code（agent）读，构建项目用
+backend/prompts.py          → 给 DeepSeek V3 读，驱动业务功能
+eval/scenarios.yaml         → 给 infra-model-eval 读，验证 prompt 效果
+```
 
 ---
 
 ## 数据模型
 
-### vocab.json（本地，~/ai-input/vocab.json）
+### vocab.json（~/ai-input/vocab.json）
 
 ```json
 [
@@ -123,16 +147,22 @@ POST /vocab/review
 ]
 ```
 
-### SM-2 间隔
+### 生词入库判断（vocab.py）
+
+A1/A2 词汇集合（约 1500 词）内置，不在集合里 → 自动入库。
+B1 词（despite / whereas 等）也会入库，后续通过复习频次自然淘汰掌握的词。
+
+### SM-2 复习间隔
 
 答对后间隔：1 → 3 → 7 → 14 → 30 天（按 correct_count 索引）
 答错：重置为 1 天
 
-### CEFR 盲点判断
+### 复习判题
 
-`vocab.py` 内置 A1+A2 词汇集合（约 1500 词）。
-翻译完成后：word 不在集合里 → 自动入库。
-不调 AI，不增加延迟。
+不做字符串比对，调 AI 做语义判断：
+- "短暂" = "短暂的" → correct
+- "一瞬即逝" = "短暂的" → correct
+- "永恒的" = "短暂的" → wrong
 
 ---
 
@@ -147,21 +177,9 @@ Tauri 使用 `CmdOrCtrl+Alt+I/T`，自动适配双平台。
 
 ---
 
-## Prompt 与 Markdown 文件的关系
+## 工程规范（业务侧）
 
-```
-CLAUDE.md / CONTEXT.md / DESIGN.md / PLAN.md
-    → 给 Claude Code（AI agent）读
-    → 目的：让 agent 理解项目，正确执行任务
-
-backend/prompts.py
-    → 给 DeepSeek V3（业务 AI 模型）读
-    → 目的：驱动业务功能
-
-eval/scenarios.yaml
-    → 给 infra-model-eval（测试工具）读
-    → 目的：验证 prompts.py 效果
-
-三者内容对应，但载体和受众不同。
-prompts.py 是 scenarios.yaml 中 system prompt 的生产版本。
-```
+- 所有 prompt 只在 `prompts.py` 定义，其他文件不内联 prompt
+- API 只绑 127.0.0.1，不对外暴露
+- vocab.json 路径从 config 读，不硬编码
+- context_sentence 始终从前端剪贴板上下文提取并传入，不可省略（有则传，无则传空字符串）
