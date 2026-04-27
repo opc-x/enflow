@@ -5,7 +5,7 @@ use std::thread;
 use std::io::Write;
 
 use tauri::{
-    AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow,
+    AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WindowEvent,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
@@ -40,6 +40,19 @@ fn show_popup_window<R: Runtime>(w: &WebviewWindow<R>, label: &str) -> tauri::Re
     w.set_focus()?;
     debug_log(format!("show_window label={label} all_spaces={all_spaces} always_top={always_top}"));
     Ok(())
+}
+
+fn hide_on_close<R: Runtime>(w: &WebviewWindow<R>, label: &'static str) {
+    let app = w.app_handle().clone();
+    w.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Some(window) = app.get_webview_window(label) {
+                window.hide().ok();
+            }
+            debug_log(format!("window_close_hidden label={label}"));
+        }
+    });
 }
 
 // ── macOS CoreGraphics：直接把事件投递到目标进程，完全绕过输入法 ──────────────
@@ -288,6 +301,7 @@ pub fn run() {
             if let Some(w) = app.get_webview_window("input") {
                 w.set_visible_on_all_workspaces(true).ok();
                 w.set_always_on_top(true).ok();
+                hide_on_close(&w, "input");
             }
 
             // ── 启动 Python backend ──────────────────────────────────────
@@ -412,6 +426,7 @@ fn show_translate<R: Runtime>(app: &AppHandle<R>, text: &str) -> tauri::Result<(
         .resizable(false)
         .always_on_top(true)
         .build()?;
+    hide_on_close(&w, "translate");
     show_popup_window(&w, "translate")
 }
 
@@ -433,5 +448,12 @@ fn show_or_create<R: Runtime>(app: &AppHandle<R>, label: &str) -> tauri::Result<
         .resizable(false)
         .always_on_top(true)
         .build()?;
+    if label == "review" {
+        hide_on_close(&w, "review");
+    } else if label == "stats" {
+        hide_on_close(&w, "stats");
+    } else if label == "translate" {
+        hide_on_close(&w, "translate");
+    }
     show_popup_window(&w, label)
 }

@@ -109,7 +109,14 @@
       "Bash(awk '{print \"restarted, new pid:\", $2}')",
       "Bash(\"/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli\" --list-system-variables)",
       "Bash(\"/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli\" --show-current-profile-name)",
-      "Bash(\"/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli\" --select-profile \"Default\")"
+      "Bash(\"/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli\" --select-profile \"Default\")",
+      "Bash(ipconfig getifaddr *)",
+      "Bash(/usr/libexec/ApplicationFirewall/socketfilterfw *)",
+      "Bash(open -a \"InputLeap\")",
+      "Bash(open /Applications/InputLeap.app)",
+      "Bash(/Applications/InputLeap.app/Contents/MacOS/input-leaps --version)",
+      "Bash(mdls -name kMDItemVersion /Applications/InputLeap.app)",
+      "Bash(awk '{print \"Running PID:\", $2}')"
     ]
   },
   "hooks": {
