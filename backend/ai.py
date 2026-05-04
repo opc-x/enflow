@@ -8,7 +8,7 @@ from config import DEEPSEEK_API_KEY, MODEL
 import prompts
 from phonetics import get_xieyin
 
-client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com", timeout=15.0)
 
 _TRANSLATE_PROMPTS = {
     "word":      prompts.PROMPT_TRANSLATE_WORD,
