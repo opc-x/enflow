@@ -2,8 +2,9 @@
  * 组件单元测试 — mock Tauri API，真实 fetch 调 backend（需后端运行）
  * 覆盖：InputPad / TranslatePop / ReviewSession / StatsView / ExplainPop
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, act } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── mock api.ts 让组件测试与网络隔离 ─────────────────────────────────────────
@@ -73,6 +74,112 @@ describe("InputPad", () => {
     await userEvent.type(input, "test");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(screen.getByText(/出错/)).toBeInTheDocument());
+  });
+});
+
+// ── InputPad — IME 输入法冲突测试 ─────────────────────────────────────────────
+// 覆盖 Sougou V-mode / 拼音输入法 在合成期间按 Enter 的三种情况：
+//   Case A: compositionEnd 正常触发 → 触发后 submit
+//   Case B: compositionEnd 从不触发（V-mode 卡住）→ 500ms fallback 后 submit
+//   Case C: 正常英文 Enter → 立即 submit，不等 compositionEnd
+describe("InputPad — IME 输入法冲突", () => {
+  const onStats  = vi.fn();
+  const onReview = vi.fn();
+  beforeEach(() => vi.clearAllMocks());
+
+  // Case C: 普通英文 Enter，isComposing=false → 立即 submit（不依赖 fake timer）
+  it("Case C: 非合成状态 Enter → 立即触发 convert", async () => {
+    (api.convert as ReturnType<typeof vi.fn>).mockResolvedValue({ result: "hello" });
+    render(<InputPad onStats={onStats} onReview={onReview} />);
+    const input = screen.getByPlaceholderText(/输入中英混合/);
+
+    fireEvent.change(input, { target: { value: "你好" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+
+    await waitFor(() => expect(api.convert).toHaveBeenCalledWith("你好"));
+  });
+
+  // Case A: 合成中按 Enter，compositionEnd 正常触发 → setTimeout(10ms) 后 submit
+  it("Case A: 合成中 Enter + compositionEnd 正常触发 → submit", async () => {
+    vi.useFakeTimers();
+    try {
+      (api.convert as ReturnType<typeof vi.fn>).mockResolvedValue({ result: "beijing" });
+      render(<InputPad onStats={onStats} onReview={onReview} />);
+      const input = screen.getByPlaceholderText(/输入中英混合/);
+
+      fireEvent.change(input, { target: { value: "北京" } });
+      fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+      expect(api.convert).not.toHaveBeenCalled();
+
+      fireEvent.compositionEnd(input);
+      await act(async () => { vi.advanceTimersByTime(20); });
+
+      expect(api.convert).toHaveBeenCalledWith("北京");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Case B: 合成中按 Enter，compositionEnd 从不触发（Sougou V-mode 卡住）
+  //         → 500ms fallback timeout 后仍然 submit
+  it("Case B: 合成中 Enter + compositionEnd 永不触发 → 500ms 后 fallback submit", async () => {
+    vi.useFakeTimers();
+    try {
+      (api.convert as ReturnType<typeof vi.fn>).mockResolvedValue({ result: "version" });
+      render(<InputPad onStats={onStats} onReview={onReview} />);
+      const input = screen.getByPlaceholderText(/输入中英混合/);
+
+      fireEvent.change(input, { target: { value: "v" } });
+      fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+      expect(api.convert).not.toHaveBeenCalled();
+
+      // 499ms 内不触发
+      await act(async () => { vi.advanceTimersByTime(499); });
+      expect(api.convert).not.toHaveBeenCalled();
+
+      // 到达 500ms → fallback 触发
+      await act(async () => { vi.advanceTimersByTime(1); });
+      expect(api.convert).toHaveBeenCalledWith("v");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // compositionEnd 触发但 Enter 未按过 → 不触发 submit
+  it("compositionEnd 在无 Enter 的情况下不触发 submit", async () => {
+    vi.useFakeTimers();
+    try {
+      (api.convert as ReturnType<typeof vi.fn>).mockResolvedValue({ result: "x" });
+      render(<InputPad onStats={onStats} onReview={onReview} />);
+      const input = screen.getByPlaceholderText(/输入中英混合/);
+
+      fireEvent.change(input, { target: { value: "北京" } });
+      fireEvent.compositionEnd(input);
+      await act(async () => { vi.advanceTimersByTime(600); });
+
+      expect(api.convert).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // compositionEnd 触发后取消了 fallback timer，不重复 submit
+  it("Case A + B: compositionEnd 触发后 fallback 不再重复 submit", async () => {
+    vi.useFakeTimers();
+    try {
+      (api.convert as ReturnType<typeof vi.fn>).mockResolvedValue({ result: "ok" });
+      render(<InputPad onStats={onStats} onReview={onReview} />);
+      const input = screen.getByPlaceholderText(/输入中英混合/);
+
+      fireEvent.change(input, { target: { value: "测试" } });
+      fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+      fireEvent.compositionEnd(input); // 正常触发，应清除 fallback
+      await act(async () => { vi.advanceTimersByTime(600); }); // 超过 500ms fallback
+
+      expect(api.convert).toHaveBeenCalledTimes(1); // 只 submit 一次
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

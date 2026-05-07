@@ -10,6 +10,8 @@ export default function InputPad({ onStats, onReview }: {
   const [status, setStatus] = useState("Enter 转换  Esc 关闭  ✦T 划词翻译");
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const submitAfterCompose = useRef(false);
+  const composeFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const submit = async () => {
     if (!text.trim() || loading) return;
@@ -37,8 +39,31 @@ export default function InputPad({ onStats, onReview }: {
         disabled={loading}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => {
-          if (e.key === "Enter") submit();
+          if (e.key === "Enter") {
+            if (e.nativeEvent.isComposing) {
+              submitAfterCompose.current = true;
+              // Fallback: some IMEs (e.g. Sougou V-mode) never fire compositionEnd
+              // on Enter. Submit anyway after 500ms.
+              if (composeFallbackTimer.current) clearTimeout(composeFallbackTimer.current);
+              composeFallbackTimer.current = setTimeout(() => {
+                if (!submitAfterCompose.current) return;
+                submitAfterCompose.current = false;
+                submit();
+              }, 500);
+            } else {
+              submit();
+            }
+          }
           if (e.key === "Escape") getCurrentWindow().hide();
+        }}
+        onCompositionEnd={() => {
+          if (!submitAfterCompose.current) return;
+          submitAfterCompose.current = false;
+          if (composeFallbackTimer.current) {
+            clearTimeout(composeFallbackTimer.current);
+            composeFallbackTimer.current = null;
+          }
+          setTimeout(submit, 10);
         }}
         placeholder="输入中英混合文字..."
       />
