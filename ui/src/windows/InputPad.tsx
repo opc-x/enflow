@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "../api";
 
 export default function InputPad({ onStats, onReview }: {
@@ -54,7 +53,7 @@ export default function InputPad({ onStats, onReview }: {
               submit();
             }
           }
-          if (e.key === "Escape") getCurrentWindow().hide();
+          if (e.key === "Escape") invoke("close_input");
         }}
         onCompositionEnd={() => {
           if (!submitAfterCompose.current) return;

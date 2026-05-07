@@ -17,6 +17,7 @@ use enigo::{Enigo, Key, Keyboard, Settings};
 struct BackendProcess(Mutex<Option<Child>>);
 struct PreviousApp(Mutex<(String, i32)>);
 struct PendingTranslate(Mutex<String>);
+struct PreviousInputSource(Mutex<String>);
 
 fn debug_log(message: impl AsRef<str>) {
     let ts = std::time::SystemTime::now()
@@ -194,7 +195,30 @@ end tell"#
         .unwrap_or(false)
 }
 
-// ── 弹出输入框前记住上一个 app，然后显示窗口 ─────────────────────────────────
+// ── 读/切换输入法（macOS）────────────────────────────────────────────────────
+#[cfg(target_os = "macos")]
+fn get_current_input_source() -> String {
+    Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"System Events\" to get bundle identifier of first input source whose selected is true")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
+fn switch_input_source(bundle_id: &str) {
+    if bundle_id.is_empty() { return; }
+    let script = format!(
+        "tell application \"System Events\" to select (first input source whose bundle identifier is \"{}\")",
+        bundle_id
+    );
+    Command::new("osascript").arg("-e").arg(script).output().ok();
+}
+
+// ── 弹出输入框前记住上一个 app + 输入法，切到英文 ──────────────────────────────
 fn show_input<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -205,6 +229,12 @@ fn show_input<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 *g = prev;
             }
         }
+        let prev_src = get_current_input_source();
+        debug_log(format!("show_input prev_input_source={prev_src}"));
+        if let Ok(mut g) = app.state::<PreviousInputSource>().0.lock() {
+            *g = prev_src;
+        }
+        switch_input_source("com.apple.keylayout.ABC");
     }
     if let Some(w) = app.get_webview_window("input") {
         show_popup_window(&w, "input")?;
@@ -252,6 +282,13 @@ fn paste_text(app: AppHandle, text: String) -> Result<(), String> {
         }
         thread::sleep(Duration::from_millis(400));
 
+        // Restore input source before paste so the target app sees the right IME.
+        let prev_src = app.state::<PreviousInputSource>().0.lock().map(|g| g.clone()).unwrap_or_default();
+        debug_log(format!("paste_text restore_input_source={prev_src}"));
+        if !prev_src.is_empty() {
+            switch_input_source(&prev_src);
+        }
+
         // Menu paste avoids IME "v mode" when synthetic Cmd+V loses its modifier.
         if paste_via_menu(pid) {
             debug_log("paste_text menu_paste_done");
@@ -277,6 +314,25 @@ fn paste_text(app: AppHandle, text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn close_input(app: AppHandle) -> Result<(), String> {
+    debug_log("close_input called");
+    #[cfg(target_os = "macos")]
+    {
+        let prev_src = app.state::<PreviousInputSource>().0.lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        debug_log(format!("close_input restore_input_source={prev_src}"));
+        if !prev_src.is_empty() {
+            switch_input_source(&prev_src);
+        }
+    }
+    if let Some(w) = app.get_webview_window("input") {
+        w.hide().ok();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn get_pending_translate(app: AppHandle) -> String {
     let text = app.state::<PendingTranslate>().0.lock().map(|g| g.clone()).unwrap_or_default();
     debug_log(format!("get_pending_translate len={}", text.len()));
@@ -294,6 +350,7 @@ pub fn run() {
         .manage(BackendProcess(Mutex::new(None)))
         .manage(PreviousApp(Mutex::new((String::new(), 0))))
         .manage(PendingTranslate(Mutex::new(String::new())))
+        .manage(PreviousInputSource(Mutex::new(String::new())))
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -404,7 +461,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![paste_text, get_pending_translate])
+        .invoke_handler(tauri::generate_handler![paste_text, close_input, get_pending_translate])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
